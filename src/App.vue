@@ -1,35 +1,85 @@
 <script setup>
 import HelloWorld from './components/HelloWorld.vue'
 import TheWelcome from './components/TheWelcome.vue'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { io } from "socket.io-client";
+
+const EVENTS = {
+  REGISTER: 'REGISTER_SESSION',
+  LOGOUT: 'LOGOUT_SESSION',
+  NOTIFY:    'NOTIFICATION',
+  // HEARTBEAT: 'HEARTBEAT',
+  // ERROR:     'ERROR',
+};
 
 // const socket = io("ws://localhost:3000");
 const socket = io("wss://localhost:3000");
 const _payload = ref([]);
-onMounted(() => {
-  console.log(socket);
-  if (!socket) return;
-  socket.on('notification', payload => {
-    console.log(payload)
+const _userId = ref(null);
+
+const register = async () => {
+  socket.emit(
+    EVENTS.REGISTER,
+    { userId: _userId.value, sessionId: crypto.randomUUID(), timestamp: Date.now() },
+    (ack) => { // callback function
+      if (ack.success) {
+        console.log('Registered successfully:', ack.sessionId);
+      } else {
+        console.error('Registration failed:', ack.error);
+      }
+    }
+  );
+}
+
+const stopWatcher = watch(_userId, newId => {
+  if (!newId) return;
+
+  // 1) when socket connects (or reconnects), register
+  socket.on('connect', register);
+
+  // 2) listen for notifications
+  socket.on(EVENTS.NOTIFY, payload => {
     _payload.value.push(payload);
+    alert('logout');
   });
-  socket.on(socket.id, payload => {
-    console.log(payload)
-    // alert('Logout')
-    // logout action
-    // _payload.value.push(payload);
-  });
-  socket.on('logout', payload => {
-    console.log(payload)
-    alert('Logout')
-    // logout action
-    // _payload.value.push(payload);
-  });
+
+  // If we're already connected, call register immediately
+  if (socket.connected) register();
+
+  // stop watching after initial setup
+  stopWatcher();
+});
+
+onMounted(() => {
+  // console.log(socket);
+  // if (!socket) return;
+  // if (!_userId.value) return;
+
+  // socket.on('connect', () => {
+  //   // register with the server: server will reply with a heartbeat ack
+  //   // let sessionId = crypto.randomUUID();
+  //   // console.log(sessionId);
+  //   register();
+  // });
+
+
+  // socket.on('notification', payload => {
+  //   console.log(payload)
+  //   _payload.value.push(payload);
+  // });
+
+
 });
 
 const onClick = () => {
-  socket.emit('client-msg', 'LOGOUT');
+  socket.emit('client-msg', { userId: _userId.value, msg: "LOGOUT" },
+    (ack) => { // callback function
+      // if (ack.success) {
+      //   console.log('Registered successfully:', ack.sessionId);
+      // } else {
+      //   console.error('Registration failed:', ack.error);
+      // }
+    });
 }
 
 </script>
@@ -42,9 +92,16 @@ const onClick = () => {
         {{ _payload }}
       </div>
       <button @click="onClick">
-        Click Me
+        Test Notify
       </button>
       <!-- <HelloWorld msg="You did it!" /> -->
+      <div style="margin-left: 24px">
+        <input type="text" v-model="_userId">
+
+        <button @click="register">
+          Register
+        </button>
+      </div>
     </div>
   </header>
 
